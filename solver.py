@@ -73,6 +73,28 @@ class Resources:
         resources = {item[-1]: int(item[:-1]) for item in resources}
         return Resources(resources)
 
+
+class GameState:
+    def __init__(self, resources, sequence):
+        self.resources = resources
+        self.sequence = sequence
+
+    def __repr__(self):
+        return f'Resources: {self.resources}, Sequence: {self.sequence}'
+
+    def is_solved(self, target):
+        return all([self.resources.resources[resource] >= target.resources[resource] for resource in target.resources])
+    
+    def can_perform_action(self, action):
+        return all([self.resources.resources[resource] >= action.cost[resource] for resource in action.cost])
+    
+    def perform_action(self, action):
+        # Update the resources
+        for resource in action.reward:
+            self.resources.resources[resource] += action.reward[resource]
+        # Append the action to the sequence
+        self.sequence.append(action)
+
 class Game:
     def __init__(self, rounds, actions_per_round, start, target, actions):
         self.rounds = rounds
@@ -106,7 +128,7 @@ class Game:
         # Initialize the current resources
         current_resources = self.start
         # Initialize the sequence of actions
-        sequence = []
+        state = GameState(current_resources, [])
         # Iterate over rounds
         for _ in range(self.rounds):
             # Iterate over actions per round
@@ -114,22 +136,55 @@ class Game:
                 # Iterate over actions
                 for action in self.actions:
                     # Check if there are enough resources to perform the action and perform it only if corresponding resource is not already at the target
-                    if all([current_resources.resources[resource] >= action.cost[resource] for resource in action.cost]) and not all([current_resources.resources[resource] >= self.target.resources[resource] for resource in action.reward]):
-                        # Update the current resources
-                        for resource in action.reward:
-                            current_resources.resources[resource] += action.reward[resource]
-                        # Append the action to the sequence
-                        sequence.append(action)
-                        # Break out of the loop
+                    if state.can_perform_action(action) and not all([current_resources.resources[resource] >= self.target.resources[resource] for resource in action.reward]):
+                        state.perform_action(action)
                         break
-                if self.is_solved(current_resources):
+                if state.is_solved(self.target):
                     break
-            if self.is_solved(current_resources):
+            if state.is_solved(self.target):
                 break
             # Restore the astronauts
             current_resources.resources['A'] = self.start.resources['A']
+        return state.sequence
+    
+    # def find_min_steps(self):
+    #     # Initialize the memoization table
+    #     memo = {}
 
-        return sequence
+    #     def backtrack(remaining_rounds, resources, current_step):
+    #         # Check if the current state is already computed
+    #         state = (remaining_rounds, tuple(sorted(resources.items())))
+    #         if state in memo:
+    #             return memo[state]
+
+    #         # Check if the target is reached or exceeded
+    #         if all(resources[resource] >= target_resources[resource] for resource in 'CDN'):
+    #             return current_step
+
+    #         # If no more rounds, return infinity
+    #         if remaining_rounds == 0:
+    #             return float('inf')
+
+    #         min_steps = float('inf')
+    #         # Attempt each action in the current round
+    #         for cost, reward in actions:
+    #             if can_perform_action(resources, cost):
+    #                 new_resources = perform_action(resources.copy(), cost, reward)
+
+    #                 # Restore astronauts at the end of each round
+    #                 if current_step % actions_per_round == 0 and current_step != 0:
+    #                     new_resources['A'] = starting_resources['A']
+
+    #                 steps = backtrack(remaining_rounds - 1, new_resources, current_step + 1)
+    #                 min_steps = min(min_steps, steps)
+
+    #         # Memoize and return the minimum steps
+    #         memo[state] = min_steps
+    #         return min_steps
+
+    #     return backtrack(num_rounds, starting_resources, 0)
+
+
 
 def main():
     # Read the game from the file
