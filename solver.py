@@ -60,11 +60,14 @@ class Action:
         return Action(cost, reward)
 
 class Resources:
-    def __init__(self, resources):
+    def __init__(self, resources : dict):
         self.lookup = resources
 
     def __repr__(self):
         return f'Resources: {self.lookup}'
+
+    def __add__(self, other):
+        return Resources({resource: self.lookup[resource] + other.lookup[resource] for resource in other.lookup})
 
     def parse(line):
         # Split the line into resources
@@ -87,6 +90,9 @@ class GameState:
 
     def is_solved(self, target):
         return all([self.resources.lookup[resource] >= target.lookup[resource] for resource in target.lookup])
+
+    def can_be_solved(self, remaining_rounds : int, target_resources: Resources, max_resources_per_round : Resources):
+        return all([self.resources.lookup[resource] + remaining_rounds * max_resources_per_round.lookup[resource] >= target_resources.lookup[resource] for resource in max_resources_per_round.lookup])
     
     def can_perform_action(self, action):
         return all([self.resources.lookup[resource] >= action.cost[resource] for resource in action.cost])
@@ -126,6 +132,7 @@ class Game:
         self.start = start
         self.target = target
         self.actions = actions
+        self.max_resources_per_round = Resources(self._get_maximum_resources_per_round())
 
     def __repr__(self):
         return f'Game: {self.rounds}, {self.actions_per_round}, {self.start}, {self.target}, {self.actions}'
@@ -148,6 +155,21 @@ class Game:
     def is_solved(self, current_resources: Resources):
         return all([current_resources.lookup[resource] >= self.target.lookup[resource] if self.target.lookup[resource] > 0 else current_resources.lookup[resource] < self.target.lookup[resource] for resource in self.target.lookup])
     
+    def can_be_solved(self, state: GameState):
+        return state.can_be_solved(self.remaining_rounds(state), self.target, self.max_resources_per_round)
+
+    def remaining_rounds(self, state: GameState):
+        return self.rounds * self.actions_per_round - state.get_moves()
+
+    def _get_maximum_resources_per_round(self):
+        # Get the maximum resources per round
+        maximum_resources_per_round = {}
+        for action in self.actions:
+            for resource in action.reward:
+                if resource not in maximum_resources_per_round or maximum_resources_per_round[resource] < action.reward[resource]:
+                    maximum_resources_per_round[resource] = action.reward[resource]
+        return maximum_resources_per_round
+
     def advance_round(self, current_resources: Resources):
         # Restore the astronauts
         if 'A' in current_resources.lookup:
@@ -160,10 +182,7 @@ class Game:
     def solve(self):
         # Initialize the current resources
         current_resources = self.start
-        # Initialize the seq
-        # class GameState:
-        # uence of actions
-
+        # Initialize the sequence of actions
         state = GameSequence(current_resources, [])
         # Iterate over rounds
         for _ in range(self.rounds):
@@ -203,7 +222,7 @@ class Game:
                 best_solution = state
                 return state
 
-            if remaining_rounds == 0:
+            if remaining_rounds == 0 or not self.can_be_solved(state):
                 return None
 
             min_steps = None
@@ -223,18 +242,21 @@ class Game:
 
             # Memoize and return the minimum steps
             memo[(remaining_rounds, tuple(sorted(state.resources.lookup.items())))] = min_steps
+            if len(memo) % 10000 == 0:
+                print("Memo size: " + str(len(memo)))
             return min_steps
 
         result = backtrack(self.rounds * self.actions_per_round, GameSequence(self.start, []))
-        return result
+        return (result, len(memo))
     
 def main():
     # Read the game from the file
-    with open('rules.txt', 'r') as file:
+    with open('space-station-brutal.txt', 'r') as file:
         game = Game.parse_from_file(file)
     # Solve the game
-    sequence = game.find_min_steps()
+    sequence, search_depth = game.find_min_steps()
     print(sequence)
+    print('Search depth: ' + str(search_depth))
 
 def test_solve():
     # Test 1
