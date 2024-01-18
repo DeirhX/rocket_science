@@ -1,0 +1,12 @@
+2 4
+5P 3A 6C 26D 3N 0R
+0P 0A 0C 33D 17N 3R
+2P => 5D 2R
+1N 3C => 8D
+1P 2N => 4D 4C
+1P => 3N
+2P 1D => 6N
+2D => 3N 3C
+2A => 4C 1R
+1A 2C => 5D
+1P 1A => 2N 1C 2D 1R

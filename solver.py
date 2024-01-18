@@ -52,8 +52,8 @@ class Action:
         # Split the line into cost and reward
         cost, reward = line.split('=>')
         # Split cost and reward into individual items
-        cost = cost.split(' ')
-        reward = reward.split(' ')
+        cost = cost.strip().split(' ')
+        reward = reward.strip().split(' ')
         # Convert cost and reward to dictionaries
         cost = {item[-1]: int(item[:-1]) for item in cost}
         reward = {item[-1]: int(item[:-1]) for item in reward}
@@ -93,6 +93,8 @@ class GameState:
     
     def perform_action(self, action):
         # Update the resources
+        for resource in action.cost:
+            self.resources.lookup[resource] -= action.cost[resource]
         for resource in action.reward:
             self.resources.lookup[resource] += action.reward[resource]
         self.moves += 1
@@ -129,8 +131,8 @@ class Game:
         return f'Game: {self.rounds}, {self.actions_per_round}, {self.start}, {self.target}, {self.actions}'
 
     def parse_from_file(file):
-        # Read the lines
-        lines = file.readlines()
+        # Read the lines without the newline character
+        lines = [line.rstrip('\n') for line in file]
         # Get the number of rounds and actions per round
         rounds, actions_per_round = lines[0].split(' ')
         rounds = int(rounds)
@@ -144,11 +146,16 @@ class Game:
         return Game(rounds, actions_per_round, start, target, actions)
 
     def is_solved(self, current_resources: Resources):
-        return all([current_resources.lookup[resource] >= self.target.lookup[resource] for resource in self.target.lookup])
+        return all([current_resources.lookup[resource] >= self.target.lookup[resource] if self.target.lookup[resource] > 0 else current_resources.lookup[resource] < self.target.lookup[resource] for resource in self.target.lookup])
     
     def advance_round(self, current_resources: Resources):
         # Restore the astronauts
-        current_resources.lookup['A'] = self.start.lookup['A']
+        if 'A' in current_resources.lookup:
+            current_resources.lookup['A'] = self.start.lookup['A']
+        if 'R' in current_resources.lookup:
+            current_resources.lookup['R'] = 0
+        if 'H' in current_resources.lookup:
+            current_resources.lookup['H'] -= 2
 
     def solve(self):
         # Initialize the current resources
@@ -173,20 +180,27 @@ class Game:
             if state.is_solved(self.target):
                 break
             # Restore the astronauts
-            current_resources.lookup['A'] = self.start.lookup['A']
+            self.advance_round(current_resources)
         return state.sequence
     
     def find_min_steps(self) -> GameSequence:
         # Initialize the memoization table
         memo = {}
+        # Initialize the best solution
+        best_solution = None
 
         def backtrack(remaining_rounds: int, state: GameSequence) -> GameSequence:
+            nonlocal best_solution
+            if best_solution is not None and (len(state.sequence) > len(best_solution.sequence) or state.resources.lookup['P'] <= best_solution.resources.lookup['P']):
+                return None
+
             # Check if the current state is already computed
             hashed_state = (remaining_rounds, tuple(sorted(state.resources.lookup.items())))
             if hashed_state in memo:
                 return memo[hashed_state]
 
             if state.is_solved(self.target):
+                best_solution = state
                 return state
 
             if remaining_rounds == 0:
@@ -220,7 +234,6 @@ def main():
         game = Game.parse_from_file(file)
     # Solve the game
     sequence = game.find_min_steps()
-    # Print the sequence
     print(sequence)
 
 def test_solve():
@@ -236,5 +249,5 @@ def test_solve():
     print(sequence)
 
 if __name__ == '__main__':
-    # main()
-    test_solve()
+    main()
+    # test_solve()

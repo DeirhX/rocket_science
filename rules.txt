@@ -1,0 +1,12 @@
+6 4
+9P 0C 0D 0N 0H
+0P 18C 18D 18N -3H
+2P 2H => 3C
+1D 1N => 5C 3H
+3N => 4C 2D 1H
+1P => 4D
+1P 1N => 5D
+2C 1H => 3D 2N
+1P => 3N 
+2P 1D => 6N
+2D => 3N 3C 1H
