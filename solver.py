@@ -40,25 +40,6 @@
 # Example output:
 # 2 3 4
 
-class Action:
-    def __init__(self, cost, reward):
-        self.cost = cost
-        self.reward = reward
-
-    def __repr__(self):
-        return f'Cost: {self.cost}, Reward: {self.reward}'
-
-    def parse(line):
-        # Split the line into cost and reward
-        cost, reward = line.split('=>')
-        # Split cost and reward into individual items
-        cost = cost.strip().split(' ')
-        reward = reward.strip().split(' ')
-        # Convert cost and reward to dictionaries
-        cost = {item[-1]: int(item[:-1]) for item in cost}
-        reward = {item[-1]: int(item[:-1]) for item in reward}
-        return Action(cost, reward)
-
 class Resources:
     def __init__(self, resources : dict):
         self.lookup = resources
@@ -76,6 +57,28 @@ class Resources:
         resources = {item[-1]: int(item[:-1]) for item in resources}
         return Resources(resources)
 
+class Action:
+    def __init__(self, cost: Resources, reward: Resources):
+        self.cost = cost
+        self.reward = reward
+
+    def __repr__(self):
+        return f'Cost: {self.cost}, Reward: {self.reward}, Rating: {self.rate()}'
+
+    def parse(line):
+        # Split the line into cost and reward
+        cost, reward = line.split('=>')
+        # Split cost and reward into individual items
+        cost = cost.strip().split(' ')
+        reward = reward.strip().split(' ')
+        # Convert cost and reward to dictionaries
+        cost = {item[-1]: int(item[:-1]) for item in cost}
+        reward = {item[-1]: int(item[:-1]) for item in reward}
+        return Action(cost, reward)
+    
+    def rate(self):
+        return sum(self.reward.values()) - sum(self.cost.values()) - self.cost.get('P', 0)
+
 
 class GameState:
     def __init__(self, resources: Resources, moves: int):
@@ -87,17 +90,20 @@ class GameState:
 
     def get_moves(self):
         return self.moves
+    
+    def rate(self, target: Resources):
+        return sum(self.resources.lookup.values()) - self.moves - sum(target.lookup.values()) + 2 * self.resources.lookup.get('P', 0) - target.lookup.get('P', 0)
 
-    def is_solved(self, target):
+    def is_solved(self, target: Resources):
         return all([self.resources.lookup[resource] >= target.lookup[resource] for resource in target.lookup])
 
     def can_be_solved(self, remaining_rounds : int, target_resources: Resources, max_resources_per_round : Resources):
         return all([self.resources.lookup[resource] + remaining_rounds * max_resources_per_round.lookup[resource] >= target_resources.lookup[resource] for resource in max_resources_per_round.lookup])
     
-    def can_perform_action(self, action):
+    def can_perform_action(self, action: Action):
         return all([self.resources.lookup[resource] >= action.cost[resource] for resource in action.cost])
     
-    def perform_action(self, action):
+    def perform_action(self, action: Action):
         # Update the resources
         for resource in action.cost:
             self.resources.lookup[resource] -= action.cost[resource]
@@ -112,7 +118,7 @@ class GameSequence(GameState):
         self.sequence = sequence
 
     def __repr__(self):
-        return f'Resources: {self.resources}, Sequence: {self.sequence}'
+        return f'Resources: {self.resources}, Actions: {len(self.sequence)}, Sequence: {self.sequence}'
     
     def copy(self):
         return GameSequence(Resources(self.resources.lookup.copy()), list(self.sequence))
@@ -126,12 +132,12 @@ class GameSequence(GameState):
         self.sequence.append(action)
 
 class Game:
-    def __init__(self, rounds, actions_per_round, start, target, actions):
+    def __init__(self, rounds: int, actions_per_round: int, start: Resources, target: Resources, actions):
         self.rounds = rounds
         self.actions_per_round = actions_per_round
         self.start = start
         self.target = target
-        self.actions = actions
+        self.actions = sorted(actions, key=lambda action: -action.rate())
         self.max_resources_per_round = Resources(self._get_maximum_resources_per_round())
 
     def __repr__(self):
@@ -220,6 +226,7 @@ class Game:
 
             if state.is_solved(self.target):
                 best_solution = state
+                print(f"Found solution rating {state.rate(self.target)} ({state.get_moves()} moves) at memo size: {len(memo)}") # + ", " + str(state))
                 return state
 
             if remaining_rounds == 0 or not self.can_be_solved(state):
