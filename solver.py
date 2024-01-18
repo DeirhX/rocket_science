@@ -211,6 +211,7 @@ class Game:
                     return None
             for resource in action.reward.lookup:
                 current_resources.lookup[resource] += action.reward.lookup[resource]
+            round += 1
         return current_resources
 
     def solve(self):
