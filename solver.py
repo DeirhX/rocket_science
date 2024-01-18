@@ -40,6 +40,8 @@
 # Example output:
 # 2 3 4
 
+import time
+
 class Resources:
     def __init__(self, resources : dict):
         self.lookup = resources
@@ -49,6 +51,12 @@ class Resources:
 
     def __add__(self, other):
         return Resources({resource: self.lookup[resource] + other.lookup[resource] for resource in other.lookup})
+    
+    def __sub__(self, other):
+        return Resources({resource: self.lookup[resource] - other.lookup[resource] for resource in other.lookup})
+
+    def exclude(self, resource_name):
+        return Resources({resource: self.lookup[resource] for resource in self.lookup if resource != resource_name})
 
     def parse(line):
         # Split the line into resources
@@ -74,10 +82,10 @@ class Action:
         # Convert cost and reward to dictionaries
         cost = {item[-1]: int(item[:-1]) for item in cost}
         reward = {item[-1]: int(item[:-1]) for item in reward}
-        return Action(cost, reward)
+        return Action(Resources(cost), Resources(reward))
     
     def rate(self):
-        return sum(self.reward.values()) - sum(self.cost.values()) - self.cost.get('P', 0)
+        return sum(self.reward.lookup.values()) - sum(self.cost.exclude('A').lookup.values()) - self.cost.lookup.get('P', 0)
 
 
 class GameState:
@@ -91,8 +99,11 @@ class GameState:
     def get_moves(self):
         return self.moves
     
+    def diff_with_target(self, target: Resources):
+        return target - self.resources
+    
     def rate(self, target: Resources):
-        return sum(self.resources.lookup.values()) - self.moves - sum(target.lookup.values()) + 2 * self.resources.lookup.get('P', 0) - target.lookup.get('P', 0)
+        return sum(self.resources.exclude('A').lookup.values()) - self.moves - sum(target.lookup.values()) + 2 * self.resources.lookup.get('P', 0) - target.lookup.get('P', 0)
 
     def is_solved(self, target: Resources):
         return all([self.resources.lookup[resource] >= target.lookup[resource] for resource in target.lookup])
@@ -101,14 +112,14 @@ class GameState:
         return all([self.resources.lookup[resource] + remaining_rounds * max_resources_per_round.lookup[resource] >= target_resources.lookup[resource] for resource in max_resources_per_round.lookup])
     
     def can_perform_action(self, action: Action):
-        return all([self.resources.lookup[resource] >= action.cost[resource] for resource in action.cost])
+        return all([self.resources.lookup[resource] >= action.cost.lookup[resource] for resource in action.cost.lookup])
     
     def perform_action(self, action: Action):
         # Update the resources
-        for resource in action.cost:
-            self.resources.lookup[resource] -= action.cost[resource]
-        for resource in action.reward:
-            self.resources.lookup[resource] += action.reward[resource]
+        for resource in action.cost.lookup:
+            self.resources.lookup[resource] -= action.cost.lookup[resource]
+        for resource in action.reward.lookup:
+            self.resources.lookup[resource] += action.reward.lookup[resource]
         self.moves += 1
 
 # derived from GameState
@@ -132,7 +143,7 @@ class GameSequence(GameState):
         self.sequence.append(action)
 
 class Game:
-    def __init__(self, rounds: int, actions_per_round: int, start: Resources, target: Resources, actions):
+    def __init__(self, rounds: int, actions_per_round: int, start: Resources, target: Resources, actions: list):
         self.rounds = rounds
         self.actions_per_round = actions_per_round
         self.start = start
@@ -171,9 +182,9 @@ class Game:
         # Get the maximum resources per round
         maximum_resources_per_round = {}
         for action in self.actions:
-            for resource in action.reward:
-                if resource not in maximum_resources_per_round or maximum_resources_per_round[resource] < action.reward[resource]:
-                    maximum_resources_per_round[resource] = action.reward[resource]
+            for resource in action.reward.lookup:
+                if resource not in maximum_resources_per_round or maximum_resources_per_round[resource] < action.reward.lookup[resource]:
+                    maximum_resources_per_round[resource] = action.reward.lookup[resource]
         return maximum_resources_per_round
 
     def advance_round(self, current_resources: Resources):
@@ -185,9 +196,26 @@ class Game:
         if 'H' in current_resources.lookup:
             current_resources.lookup['H'] -= 2
 
+    def simulate_sequence(self, sequence: GameSequence):
+        # Initialize the current resources
+        current_resources = Resources(self.start.lookup.copy())
+        round = 0
+        # Iterate over actions
+        for action in sequence.sequence:
+            if round % self.actions_per_round == 0 and round != 0:
+                self.advance_round(current_resources)
+            # Check if there are enough resources to perform the action and perform it only if corresponding resource is not already at the target
+            for resource in action.cost.lookup:
+                current_resources.lookup[resource] -= action.cost.lookup[resource]
+                if current_resources.lookup[resource] < 0:
+                    return None
+            for resource in action.reward.lookup:
+                current_resources.lookup[resource] += action.reward.lookup[resource]
+        return current_resources
+
     def solve(self):
         # Initialize the current resources
-        current_resources = self.start
+        current_resources = Resources(self.start.lookup.copy())
         # Initialize the sequence of actions
         state = GameSequence(current_resources, [])
         # Iterate over rounds
@@ -213,6 +241,8 @@ class Game:
         memo = {}
         # Initialize the best solution
         best_solution = None
+        # Measure time taken
+        start_time = time.time()
 
         def backtrack(remaining_rounds: int, state: GameSequence) -> GameSequence:
             nonlocal best_solution
@@ -254,16 +284,19 @@ class Game:
             return min_steps
 
         result = backtrack(self.rounds * self.actions_per_round, GameSequence(self.start, []))
-        return (result, len(memo))
+        return (result, len(memo), time.time() - start_time)
     
 def main():
     # Read the game from the file
     with open('space-station-brutal.txt', 'r') as file:
         game = Game.parse_from_file(file)
     # Solve the game
-    sequence, search_depth = game.find_min_steps()
+    sequence, search_depth, time_taken = game.find_min_steps()
     print(sequence)
-    print('Search depth: ' + str(search_depth))
+    print(f'Search depth: {str(search_depth)}, time taken: {str(round(time_taken * 1000) / 1000)} seconds')
+    print(f'Rating: {sequence.rate(game.target)}')
+    print(f'Extra resources: {sequence.resources - game.target}')
+    print(f'Simulated outcome: {game.simulate_sequence(sequence)}')
 
 def test_solve():
     # Test 1
