@@ -61,10 +61,10 @@ class Action:
 
 class Resources:
     def __init__(self, resources):
-        self.resources = resources
+        self.lookup = resources
 
     def __repr__(self):
-        return f'Resources: {self.resources}'
+        return f'Resources: {self.lookup}'
 
     def parse(line):
         # Split the line into resources
@@ -75,24 +75,46 @@ class Resources:
 
 
 class GameState:
-    def __init__(self, resources, sequence):
+    def __init__(self, resources: Resources, moves: int):
         self.resources = resources
-        self.sequence = sequence
+        self.moves = moves
 
     def __repr__(self):
-        return f'Resources: {self.resources}, Sequence: {self.sequence}'
+        return f'Resources: {self.resources}, Moves made: {self.moves}'
+
+    def get_moves(self):
+        return self.moves
 
     def is_solved(self, target):
-        return all([self.resources.resources[resource] >= target.resources[resource] for resource in target.resources])
+        return all([self.resources.lookup[resource] >= target.lookup[resource] for resource in target.lookup])
     
     def can_perform_action(self, action):
-        return all([self.resources.resources[resource] >= action.cost[resource] for resource in action.cost])
+        return all([self.resources.lookup[resource] >= action.cost[resource] for resource in action.cost])
     
     def perform_action(self, action):
         # Update the resources
         for resource in action.reward:
-            self.resources.resources[resource] += action.reward[resource]
-        # Append the action to the sequence
+            self.resources.lookup[resource] += action.reward[resource]
+        self.moves += 1
+
+# derived from GameState
+class GameSequence(GameState):
+    def __init__(self, resources: Resources, sequence):
+        super().__init__(resources, len(sequence))
+        self.sequence = sequence
+
+    def __repr__(self):
+        return f'Resources: {self.resources}, Sequence: {self.sequence}'
+    
+    def copy(self):
+        return GameSequence(Resources(self.resources.lookup.copy()), list(self.sequence))
+
+    def get_moves(self):
+        return len(self.sequence)
+
+    def perform_action(self, action):
+        super().perform_action(action)
+        # Update the sequence
         self.sequence.append(action)
 
 class Game:
@@ -121,14 +143,21 @@ class Game:
         actions = [Action.parse(line) for line in lines[3:]]
         return Game(rounds, actions_per_round, start, target, actions)
 
-    def is_solved(self, current_resources):
-        return all([current_resources.resources[resource] >= self.target.resources[resource] for resource in self.target.resources])
+    def is_solved(self, current_resources: Resources):
+        return all([current_resources.lookup[resource] >= self.target.lookup[resource] for resource in self.target.lookup])
     
+    def advance_round(self, current_resources: Resources):
+        # Restore the astronauts
+        current_resources.lookup['A'] = self.start.lookup['A']
+
     def solve(self):
         # Initialize the current resources
         current_resources = self.start
-        # Initialize the sequence of actions
-        state = GameState(current_resources, [])
+        # Initialize the seq
+        # class GameState:
+        # uence of actions
+
+        state = GameSequence(current_resources, [])
         # Iterate over rounds
         for _ in range(self.rounds):
             # Iterate over actions per round
@@ -136,7 +165,7 @@ class Game:
                 # Iterate over actions
                 for action in self.actions:
                     # Check if there are enough resources to perform the action and perform it only if corresponding resource is not already at the target
-                    if state.can_perform_action(action) and not all([current_resources.resources[resource] >= self.target.resources[resource] for resource in action.reward]):
+                    if state.can_perform_action(action) and not all([current_resources.lookup[resource] >= self.target.lookup[resource] for resource in action.reward]):
                         state.perform_action(action)
                         break
                 if state.is_solved(self.target):
@@ -144,54 +173,53 @@ class Game:
             if state.is_solved(self.target):
                 break
             # Restore the astronauts
-            current_resources.resources['A'] = self.start.resources['A']
+            current_resources.lookup['A'] = self.start.lookup['A']
         return state.sequence
     
-    # def find_min_steps(self):
-    #     # Initialize the memoization table
-    #     memo = {}
+    def find_min_steps(self) -> GameSequence:
+        # Initialize the memoization table
+        memo = {}
 
-    #     def backtrack(remaining_rounds, resources, current_step):
-    #         # Check if the current state is already computed
-    #         state = (remaining_rounds, tuple(sorted(resources.items())))
-    #         if state in memo:
-    #             return memo[state]
+        def backtrack(remaining_rounds: int, state: GameSequence) -> GameSequence:
+            # Check if the current state is already computed
+            hashed_state = (remaining_rounds, tuple(sorted(state.resources.lookup.items())))
+            if hashed_state in memo:
+                return memo[hashed_state]
 
-    #         # Check if the target is reached or exceeded
-    #         if all(resources[resource] >= target_resources[resource] for resource in 'CDN'):
-    #             return current_step
+            if state.is_solved(self.target):
+                return state
 
-    #         # If no more rounds, return infinity
-    #         if remaining_rounds == 0:
-    #             return float('inf')
+            if remaining_rounds == 0:
+                return None
 
-    #         min_steps = float('inf')
-    #         # Attempt each action in the current round
-    #         for cost, reward in actions:
-    #             if can_perform_action(resources, cost):
-    #                 new_resources = perform_action(resources.copy(), cost, reward)
+            min_steps = None
+            # Attempt each action in the current round
+            for action in self.actions:
+                if state.can_perform_action(action):
+                    # Make a copy of the state parameter
+                    new_state = state.copy()
+                    new_state.perform_action(action)
 
-    #                 # Restore astronauts at the end of each round
-    #                 if current_step % actions_per_round == 0 and current_step != 0:
-    #                     new_resources['A'] = starting_resources['A']
+                    # Restore astronauts and other effects at the end of the phase
+                    if new_state.get_moves() % self.actions_per_round == 0 and new_state.get_moves() != 0:
+                        self.advance_round(new_state.resources)
 
-    #                 steps = backtrack(remaining_rounds - 1, new_resources, current_step + 1)
-    #                 min_steps = min(min_steps, steps)
+                    steps = backtrack(remaining_rounds - 1, new_state)
+                    min_steps = steps if steps is not None and (min_steps is None or len(steps.sequence) < len(min_steps.sequence)) else min_steps
 
-    #         # Memoize and return the minimum steps
-    #         memo[state] = min_steps
-    #         return min_steps
+            # Memoize and return the minimum steps
+            memo[(remaining_rounds, tuple(sorted(state.resources.lookup.items())))] = min_steps
+            return min_steps
 
-    #     return backtrack(num_rounds, starting_resources, 0)
-
-
-
+        result = backtrack(self.rounds * self.actions_per_round, GameSequence(self.start, []))
+        return result
+    
 def main():
     # Read the game from the file
     with open('rules.txt', 'r') as file:
         game = Game.parse_from_file(file)
     # Solve the game
-    sequence = game.solve()
+    sequence = game.find_min_steps()
     # Print the sequence
     print(sequence)
 
@@ -204,7 +232,7 @@ def test_solve():
         Action({'P': 1}, {'C': 3}),
         Action({'P': 1}, {'D': 2})
     ])
-    sequence = game.solve()
+    sequence = game.find_min_steps()
     print(sequence)
 
 if __name__ == '__main__':
